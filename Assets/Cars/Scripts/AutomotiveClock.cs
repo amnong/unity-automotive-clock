@@ -8,7 +8,7 @@ public class AutomotiveClock : MonoBehaviour
     public GameObject segmentPrefab;
     public string segmentPrefabsTag = "";
     public float scale = 1.735f;
-    public float carSpawnDistance = 15;
+    public float carSpawnDistance = 30;
     public float carMovementSpeed = 4;
 
     private int hour = 0;

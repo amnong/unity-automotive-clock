@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 
 public class SSDigit : MonoBehaviour
 {
@@ -9,6 +10,9 @@ public class SSDigit : MonoBehaviour
     public float carSpawnDistance = 15;
     public float carMovementSpeed = 4;
     public int digit = 0;
+    public bool mirrorOrientation;
+
+    private int activeDigit = 10;  // no digit
 
     private Dictionary<int, bool[]> STATES = new Dictionary<int, bool[]>()
     {
@@ -25,39 +29,35 @@ public class SSDigit : MonoBehaviour
         {10, new bool[] { false, false, false, false, false, false, false}}  // no digit
     };
 
-    private Vector2[] segmentPositions = new Vector2[7] {
-        new Vector2(0, 2),    // A - top
-        new Vector2(1, 1),    // B - right top
-        new Vector2(1, -1),   // C - right bottom
-        new Vector2(0, -2),   // D - bottom
-        new Vector2(-1, -1),  // E - left bottom
-        new Vector2(-1, 1),   // F - left top
-        new Vector2(0, 0)     // G - center
-    };
-
-    private float[] segmentRotations = new float[7]
+    private class Segment
     {
-        90,
-        0,
-        0,
-        270,
-        180,
-        180,
-        270
+        public float xPos, zPos;
+        public int rotation;
+
+        public Segment(float xPos, float zPos, int rotation)
+        {
+            this.xPos = xPos;
+            this.zPos = zPos;
+            this.rotation = rotation;
+        }
+    }
+
+    private Segment[] segmentInfos = new Segment[]
+    {
+        new Segment(xPos:  0,  zPos:  2,  rotation:  90),
+        new Segment(xPos:  1,  zPos:  1,  rotation: 180),
+        new Segment(xPos:  1,  zPos: -1,  rotation:   0),
+        new Segment(xPos:  0,  zPos: -2,  rotation:  90),
+        new Segment(xPos: -1,  zPos: -1,  rotation:   0),
+        new Segment(xPos: -1,  zPos:  1,  rotation: 180),
+        new Segment(xPos:  0,  zPos:  0,  rotation:  90)
     };
 
     private GameObject[] segmentGameObjects;
 
-    private int activeDigit = 10;  // no digit
-
-    private void OnEnable()
+    void OnEnable()
     {
         segmentGameObjects = new GameObject[7];
-    }
-
-    void Start()
-    {
-        //OnDigitChanged();  // I think this isn't needed...
     }
 
     void Update()
@@ -69,34 +69,60 @@ public class SSDigit : MonoBehaviour
     {
         bool[] activeSegments = STATES[activeDigit];
         bool[] desiredSegments = STATES[digit];
+        float delay;
+        const float interval = 0.5f;
         activeDigit = digit;
         // Clear unneeded segments
+        delay = 0f;
         for (int i = 0; i < activeSegments.Length; i++)
         {
-            if (activeSegments[i] && !desiredSegments[i]) SegmentOut(i);
+            if (activeSegments[i] && !desiredSegments[i])
+            {
+                GameObject segmentObject = segmentGameObjects[i];
+                segmentGameObjects[i] = null;
+                StartCoroutine(SegmentOut(segmentObject, delay));
+                delay += interval;
+            }
         }
         // Activate needed segments
+        delay = 0f;
         for (int i = 0; i < desiredSegments.Length; i++)
         {
-            if (!activeSegments[i] && desiredSegments[i]) SegmentIn(i);
+            if (!activeSegments[i] && desiredSegments[i])
+            {
+                StartCoroutine(SegmentIn(i, delay));
+                delay += interval;
+            }
         }
     }
 
-    void SegmentIn(int segmentIndex)
+    IEnumerator<WaitForSeconds> SegmentIn(int segmentIndex, float delay)
     {
+        yield return new WaitForSeconds(delay);
         // Position and rotation
-        Vector2 segVector = segmentPositions[segmentIndex];
-        float xDelta = segVector.x * scale;
-        float zDelta = segVector.y * scale;  // `z = y`, this is not a mistake
-        float yRotation = segmentRotations[segmentIndex];
+        Segment segment = segmentInfos[segmentIndex];
+        float yRotation = segment.rotation;
+        if (mirrorOrientation && (segmentIndex == 0 || segmentIndex == 3))
+        {
+            yRotation = (yRotation + 180) % 360;
+        }
         // Instantiate car object
         GameObject segmentObject = segmentGameObjects[segmentIndex] = Instantiate(
             GetPrefab(), gameObject.transform, false);
-        segmentObject.transform.localPosition = new Vector3(xDelta, 0, zDelta);
+        segmentObject.transform.localPosition = new Vector3(segment.xPos * scale, 0, segment.zPos * scale);
         segmentObject.transform.Rotate(new Vector3(0, yRotation, 0));
         // Add car script to car object
         SSDigitCar car = segmentObject.AddComponent<SSDigitCar>();
         car.digit = this;
+        car.segmentIndex = segmentIndex;
+        if (segmentIndex == 0) car.spawnXOffset = carSpawnDistance / 2f;
+        if (segmentIndex == 3) car.spawnXOffset = -carSpawnDistance / 2f;
+    }
+
+    IEnumerator<WaitForSeconds> SegmentOut(GameObject segmentObject, float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        segmentObject.GetComponent<SSDigitCar>().Depart();
     }
 
     private GameObject GetPrefab()
@@ -128,10 +154,5 @@ public class SSDigit : MonoBehaviour
 
         //int idx = UnityEngine.Random.Range(0, prefabs.Count);
         //return prefabs[idx];
-    }
-
-    void SegmentOut(int segmentIndex)
-    {
-        segmentGameObjects[segmentIndex].GetComponent<SSDigitCar>().Depart();
     }
 }
